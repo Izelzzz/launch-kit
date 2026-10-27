@@ -1,0 +1,52 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+# 同一个 PR 有新推送时，取消尚未完成的旧审查
+concurrency:
+  group: ai-code-review-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # 暂不支持 fork 发起的 PR（fork 触发的工作流读取不到 secrets）
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 生成 GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.REVIEW_APP_ID }}
+          private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
+
+      # 从目标分支检出脚本和规则，防止 PR 顺手修改审查规则
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: .github
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: .github/scripts/ai-review/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci --no-audit --no-fund
+        working-directory: .github/scripts/ai-review
+
+      - name: 运行 AI 审查
+        run: node .github/scripts/ai-review/review.mjs
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          DIFY_API_KEY: ${{ secrets.DIFY_API_KEY }}
+          DIFY_BASE_URL: ${{ vars.DIFY_BASE_URL || 'https://api.dify.ai/v1' }}
+          RULES_PATH: .github/review-rules.yaml
