@@ -242,36 +242,67 @@ async function fetchRaw(request) {
   }
 }
 
-async function runDifyWorkflow(inputs, user) {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function finishedOutputs(status, outputs, error) {
+  if (status !== 'succeeded') throw new Error(`Dify 工作流状态 ${status}：${error || ''}`);
+  return typeof outputs === 'string' ? JSON.parse(outputs) : outputs;
+}
+
+export async function runDifyWorkflow(inputs, user) {
   const base = (process.env.DIFY_BASE_URL || 'https://api.dify.ai/v1').replace(/\/$/, '');
+  const headers = { Authorization: `Bearer ${requireEnv('DIFY_API_KEY')}`, 'Content-Type': 'application/json' };
   // 用 streaming 模式，避免长时间运行时 blocking 请求超时
   const res = await fetch(`${base}/workflows/run`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${requireEnv('DIFY_API_KEY')}`, 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ inputs, response_mode: 'streaming', user }),
   });
   if (!res.ok) throw new Error(`Dify 请求失败 ${res.status}：${await res.text()}`);
 
-  const decoder = new TextDecoder();
-  let buffer = '';
-  for await (const chunk of res.body) {
-    buffer += decoder.decode(chunk, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf('\n\n')) >= 0) {
-      const block = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      for (const line of block.split('\n')) {
-        if (!line.startsWith('data:')) continue;
-        const evt = JSON.parse(line.slice(5).trim());
-        if (evt.event === 'error') throw new Error(`Dify 运行出错：${evt.message || JSON.stringify(evt)}`);
-        if (evt.event === 'workflow_finished') {
-          if (evt.data.status !== 'succeeded') throw new Error(`Dify 工作流状态 ${evt.data.status}：${evt.data.error || ''}`);
-          return evt.data.outputs;
+  let runId = null;
+  try {
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for await (const chunk of res.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        const block = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        for (const line of block.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          const evt = JSON.parse(line.slice(5).trim());
+          runId ??= evt.workflow_run_id || null;
+          if (evt.event === 'error') throw new Error(`Dify 运行出错：${evt.message || JSON.stringify(evt)}`);
+          if (evt.event === 'workflow_finished') {
+            return finishedOutputs(evt.data.status, evt.data.outputs, evt.data.error);
+          }
         }
       }
     }
+    warn('Dify 流式连接已关闭，但未收到 workflow_finished 事件');
+  } catch (e) {
+    if (e.message.startsWith('Dify ')) throw e;
+    warn(`Dify 流式连接中断：${e.message}`);
   }
-  throw new Error('Dify 连接已关闭，但未收到 workflow_finished 事件');
+
+  // 连接中断时工作流仍在 Dify 端运行，改为按运行 ID 轮询结果
+  if (!runId) throw new Error('Dify 连接中断，且未拿到 workflow_run_id，无法继续获取结果');
+  console.log(`改为轮询 Dify 运行结果：${runId}`);
+  const deadline = Date.now() + 20 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await sleep(10000);
+    const r = await fetch(`${base}/workflows/run/${runId}`, { headers });
+    if (!r.ok) {
+      warn(`查询 Dify 运行状态失败 ${r.status}，稍后重试`);
+      continue;
+    }
+    const run = await r.json();
+    if (run.status === 'running') continue;
+    return finishedOutputs(run.status, run.outputs, run.error);
+  }
+  throw new Error(`等待 Dify 运行结果超时：${runId}`);
 }
 
 async function postReview(gh, owner, repo, pr, headSha, body, comments) {
