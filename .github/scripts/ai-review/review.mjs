@@ -321,6 +321,27 @@ async function postReview(gh, owner, repo, pr, headSha, body, comments) {
   }
 }
 
+// 审查失败时，把失败原因和模型原始输出的首尾片段打印到 Actions 日志（不发到 PR）
+export function printDiagnostics(debugJson) {
+  let debug;
+  try {
+    debug = JSON.parse(debugJson || '{}');
+  } catch {
+    return;
+  }
+  for (const f of debug.failed || []) {
+    warn(`审查失败：${f.path}（Dify 迭代 ${f.iteration}）—— ${f.error}`);
+    console.log(`::group::${f.path} 的模型原始输出（共 ${f.raw_length ?? 0} 字符）`);
+    console.log(`----- 开头 -----\n${f.raw_head || '（无）'}`);
+    if (f.raw_tail) console.log(`----- 结尾 -----\n${f.raw_tail}`);
+    console.log('::endgroup::');
+  }
+  if (debug.commit_check_raw) {
+    warn('Commit message 检查结果解析失败');
+    console.log(`::group::Commit message 检查的模型原始输出\n${debug.commit_check_raw}\n::endgroup::`);
+  }
+}
+
 function requireEnv(name) {
   const v = process.env[name];
   if (!v) throw new Error(`缺少环境变量 ${name}`);
@@ -359,6 +380,13 @@ async function main() {
     }),
   );
 
+  // Dify 日志里迭代只显示序号，这里打印对照表方便排查
+  if (files.length) {
+    console.log('::group::Dify 迭代序号 → 文件');
+    files.forEach((f, i) => console.log(`迭代 ${i + 1} → ${f.path}`));
+    console.log('::endgroup::');
+  }
+
   const commitRules = config.rules.filter((r) => r.target === 'commit' && ruleApplies(r, baseBranch, null));
   if (!files.length && !commitRules.length) {
     const body = `<!-- ai-code-review -->\n## 🤖 AI 代码审查报告\n\n**Commit**：\`${headSha}\`\n\n本次没有需要审查的文件（共 ${skipped.length} 个文件被跳过）。`;
@@ -386,6 +414,7 @@ async function main() {
 
   const outputs = await runDifyWorkflow(inputs, `github:${owner}/${repo}`);
   if (!outputs?.review_body) throw new Error(`Dify 输出缺少 review_body：${JSON.stringify(outputs)}`);
+  printDiagnostics(outputs.debug_json);
   const comments = JSON.parse(outputs.comments_json || '[]');
   await postReview(gh, owner, repo, pr, headSha, outputs.review_body, comments);
   console.log(`已发布审查：${outputs.issue_count ?? '?'} 个问题，${comments.length} 条行间评论`);
