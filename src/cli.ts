@@ -28,12 +28,17 @@ async function main(): Promise<void> {
   const repo = await fetchRepo(args.repo);
   console.error(`✍️  生成 ${platforms.length} 个平台的文案 …`);
   const copies = await generate(config, repo, platforms);
+  if (copies.some((c) => c.error)) process.exitCode = 1;
 
   if (args.json) {
     console.log(JSON.stringify(copies, null, 2));
     return;
   }
   for (const copy of copies) {
+    if (copy.error) {
+      console.log(`\n=== ${copy.platform} ===\n❌ 生成失败：${copy.error}`);
+      continue;
+    }
     const warn = copy.overLimit ? "  ⚠️ 超出长度上限" : "";
     console.log(`\n=== ${copy.platform}（${copy.length} 字符）${warn} ===\n${copy.text}`);
   }

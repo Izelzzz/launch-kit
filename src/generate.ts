@@ -8,6 +8,7 @@ export interface Copy {
   text: string;
   length: number;
   overLimit: boolean;
+  error?: string;
 }
 
 const PROFILE_PROMPT = `你是一名技术产品营销专家。阅读开源项目的信息，提炼一份简洁的项目画像，供后续撰写宣传文案使用。
@@ -57,5 +58,16 @@ export async function writeCopy(
 
 export async function generate(config: LlmConfig, repo: RepoInfo, platforms: Platform[]): Promise<Copy[]> {
   const profile = await buildProfile(config, repo);
-  return Promise.all(platforms.map((p) => writeCopy(config, repo, profile, p)));
+  const results = await Promise.allSettled(platforms.map((p) => writeCopy(config, repo, profile, p)));
+  return results.map((r, i) =>
+    r.status === "fulfilled"
+      ? r.value
+      : {
+          platform: platforms[i].id,
+          text: "",
+          length: 0,
+          overLimit: false,
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        },
+  );
 }

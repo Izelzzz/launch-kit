@@ -12,15 +12,28 @@ export interface RepoInfo {
 
 const MAX_README_CHARS = 12000;
 
+// 支持：owner/repo、github.com/owner/repo、https://(www.)github.com/owner/repo（可带 .git、子页面、?query、#hash），
+// 以及 git@github.com:owner/repo.git
 export function parseRepoUrl(input: string): { owner: string; name: string } {
-  const match = input
-    .trim()
-    .replace(/\.git$/, "")
-    .match(/^(?:https?:\/\/github\.com\/)?([\w.-]+)\/([\w.-]+)\/?$/);
-  if (!match) {
+  const raw = input.trim();
+  let segments: string[];
+  const ssh = raw.match(/^git@github\.com:(.+)$/i);
+  if (ssh) {
+    segments = ssh[1].replace(/\/+$/, "").split("/");
+  } else if (/^(?:https?:\/\/)?(?:www\.)?github\.com\//i.test(raw)) {
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    segments = url.pathname.split("/").filter(Boolean).slice(0, 2);
+  } else {
+    segments = raw.replace(/\/+$/, "").split("/");
+  }
+
+  const owner = segments[0];
+  const name = segments[1]?.replace(/\.git$/, "");
+  const isValid = (s: string | undefined) => !!s && /^[\w.-]+$/.test(s) && !/^\.+$/.test(s);
+  if (segments.length !== 2 || !isValid(owner) || !isValid(name)) {
     throw new Error(`无法识别的仓库地址：${input}（示例：https://github.com/owner/repo 或 owner/repo）`);
   }
-  return { owner: match[1], name: match[2] };
+  return { owner, name: name! };
 }
 
 async function githubGet(path: string, accept = "application/vnd.github+json"): Promise<Response> {
