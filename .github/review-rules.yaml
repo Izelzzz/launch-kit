@@ -1,0 +1,72 @@
+# AI 代码审查规则
+# 注意：审查时读取的是 PR「目标分支」上的这份文件，PR 中对它的修改要合并后才生效。
+
+# 规模上限（可选，不写则使用以下默认值）
+limits:
+  max_files: 20            # 单次最多审查的文件数（最大 25）
+  max_file_changes: 800    # 单文件新增+删除行数超过此值则跳过
+  max_total_changes: 4000  # 所有被审查文件的变更行数总和上限
+  max_source_chars: 60000  # 完整源文件超过此长度时只提供 diff 给模型
+
+# 额外忽略的文件（glob），与内置的默认忽略列表合并。
+# 内置列表已包含锁文件、构建产物、压缩/生成代码、第三方代码、图片/字体/二进制等。
+# 不含 "/" 的模式（如 *.lock）会匹配任意目录下的同名文件。
+# 如需完全自定义，设置 use_default_ignore: false
+ignore:
+  - "docs/**"
+
+# 规则字段说明：
+#   id          必填，唯一，会出现在审查报告的「审查规则」一列
+#   title       规则名称
+#   severity    默认等级：P0 🔴 / P1 🟡 / P2 🔵 / P3 ⚪️
+#   target      code（默认，审查代码）或 commit（审查 commit message）
+#   branches    正则列表，匹配 PR 的目标分支；省略表示所有分支
+#   files       glob 列表，匹配文件路径；省略表示所有文件（target: commit 时忽略）
+#   description 规则的详细说明，支持 Markdown，写得越具体审查越准确
+rules:
+  - id: SEC-001
+    title: 禁止硬编码凭据
+    severity: P0
+    description: |
+      代码中不得出现明文的 API Key、密码、Token、私钥、数据库连接串等凭据。
+      应通过环境变量、配置中心或密钥管理服务读取。
+      测试代码中明显的假数据（如 "test-key"、"xxx"）除外。
+
+  - id: SEC-002
+    title: 禁止拼接 SQL
+    severity: P0
+    files: ["**/*.py", "**/*.java", "**/*.go", "**/*.ts", "**/*.js"]
+    description: |
+      禁止使用字符串拼接或格式化构造 SQL 语句，必须使用参数化查询或 ORM。
+
+  - id: LOG-001
+    title: 日志不得输出敏感信息
+    severity: P1
+    description: |
+      日志中不得打印密码、Token、身份证号、手机号、银行卡号等敏感信息，必要时脱敏。
+
+  - id: ERR-001
+    title: 不得静默吞掉异常
+    severity: P1
+    branches: ["^main$", "^release/.*"]
+    files: ["**/*.py", "**/*.java", "**/*.ts", "**/*.js"]
+    description: |
+      禁止空的 except / catch 块，或捕获异常后既不记录日志也不重新抛出。
+      仅在 main 和 release/* 分支生效。
+
+  - id: TS-001
+    title: 避免使用 any
+    severity: P3
+    files: ["**/*.ts", "**/*.tsx"]
+    description: |
+      新增代码中避免使用 any 类型，优先使用具体类型、泛型或 unknown。
+
+  - id: COMMIT-001
+    title: Commit message 遵循 Conventional Commits
+    severity: P3
+    target: commit
+    description: |
+      格式为 `<type>(<scope>): <subject>`，scope 可选。
+      type 取值：feat、fix、docs、style、refactor、perf、test、build、ci、chore、revert。
+      subject 简明描述改动，不超过 72 个字符，结尾不加句号。
+      Merge commit 不检查。
