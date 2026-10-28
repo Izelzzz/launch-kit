@@ -40,4 +40,4 @@ npm start -- owner/repo --json
 Commit message 遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)，格式为 `<type>(<scope>): <subject>`，例如 `feat(cli): 支持 --json 输出`，标题不超过 72 个字符。
 
 - **本地**：`npm install` 会自动安装 git hook，提交时由 commitlint 检查，不符合规范会被拒绝。
-- **CI**：PR 中的每个 commit 和 **PR 标题**都会被检查。合并方式为 squash，PR 标题会成为 `main` 上的 commit message。
+- **CI**：PR 中的每个 commit 和 PR 标题都会被检查。PR 以 merge commit 方式合并，PR 中的每个 commit 都会保留在 `main` 的历史里。

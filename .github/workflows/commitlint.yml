@@ -33,7 +33,7 @@ jobs:
 
   pr-title:
     name: 检查 PR 标题
-    # 使用 squash 合并时，PR 标题会成为 main 上的 commit message
+    # PR 标题会写入合并提交的说明，并用于 PR 列表与发布说明，保持同样的规范
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
