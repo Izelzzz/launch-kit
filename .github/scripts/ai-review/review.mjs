@@ -72,6 +72,10 @@ export function normalizeConfig(raw) {
       continue;
     }
     seen.add(id);
+    if (r.target === 'commit') {
+      warn(`规则 ${id} 使用了 target: commit，已不再支持（commit message 格式请交给 commitlint 检查），已忽略`);
+      continue;
+    }
 
     const severity = String(r.severity || '').toUpperCase();
     if (!SEVERITIES.includes(severity)) warn(`规则 ${id} 的 severity 无效（${r.severity}），按 P2 处理`);
@@ -94,7 +98,6 @@ export function normalizeConfig(raw) {
       id,
       title: String(r.title || id),
       severity: SEVERITIES.includes(severity) ? severity : 'P2',
-      target: r.target === 'commit' ? 'commit' : 'code',
       branches,
       files: toList(r.files),
       description: String(r.description || '').trim(),
@@ -115,10 +118,10 @@ export function loadConfig(path) {
 const GLOB_OPTS = { dot: true, matchBase: true };
 export const matchAny = (path, globs) => globs.some((g) => minimatch(path, g, GLOB_OPTS));
 
-// 分支正则匹配 PR 的目标分支；path 为 null 时只看分支（用于 commit 规则）
+// 分支正则匹配 PR 的目标分支
 export function ruleApplies(rule, baseBranch, path) {
   if (rule.branches.length && !rule.branches.some((re) => re.test(baseBranch))) return false;
-  if (path != null && rule.files.length && !matchAny(path, rule.files)) return false;
+  if (rule.files.length && !matchAny(path, rule.files)) return false;
   return true;
 }
 
@@ -183,7 +186,7 @@ export function selectFiles(prFiles, config, baseBranch) {
     else if (!f.patch) skip('无文本 diff（二进制、纯重命名或 diff 过大）');
     else if (changes > limits.max_file_changes) skip(`变更 ${changes} 行，超过单文件上限 ${limits.max_file_changes} 行`);
     else {
-      const applicable = rules.filter((r) => r.target === 'code' && ruleApplies(r, baseBranch, f.filename));
+      const applicable = rules.filter((r) => ruleApplies(r, baseBranch, f.filename));
       candidates.push({ file: f, changes, rules: applicable });
     }
   }
@@ -336,10 +339,6 @@ export function printDiagnostics(debugJson) {
     if (f.raw_tail) console.log(`----- 结尾 -----\n${f.raw_tail}`);
     console.log('::endgroup::');
   }
-  if (debug.commit_check_raw) {
-    warn('Commit message 检查结果解析失败');
-    console.log(`::group::Commit message 检查的模型原始输出\n${debug.commit_check_raw}\n::endgroup::`);
-  }
 }
 
 function requireEnv(name) {
@@ -387,8 +386,7 @@ async function main() {
     console.log('::endgroup::');
   }
 
-  const commitRules = config.rules.filter((r) => r.target === 'commit' && ruleApplies(r, baseBranch, null));
-  if (!files.length && !commitRules.length) {
+  if (!files.length) {
     const body = `<!-- ai-code-review -->\n## 🤖 AI 代码审查报告\n\n**Commit**：\`${headSha}\`\n\n本次没有需要审查的文件（共 ${skipped.length} 个文件被跳过）。`;
     await postReview(gh, owner, repo, pr, headSha, body, []);
     return;
@@ -407,7 +405,6 @@ async function main() {
     commits_text: formatCommits(commits, limits.max_commits),
     readme: readme ? truncate(readme, limits.max_readme_chars) : '（仓库没有 README）',
     files_json: JSON.stringify(files),
-    commit_rules: renderRules(commitRules) || '（无）',
     rules_index: JSON.stringify(Object.fromEntries(config.rules.map((r) => [r.id, r.title]))),
     skipped_files_json: JSON.stringify(skipped),
   };
