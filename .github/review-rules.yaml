@@ -19,9 +19,11 @@ ignore:
 #   id          必填，唯一，会出现在审查报告的「审查规则」一列
 #   title       规则名称
 #   severity    默认等级：P0 🔴 / P1 🟡 / P2 🔵 / P3 ⚪️
-#   target      code（默认，审查代码）或 commit（审查 commit message）
 #   branches    正则列表，匹配 PR 的目标分支；省略表示所有分支
-#   files       glob 列表，匹配文件路径；省略表示所有文件（target: commit 时忽略）
+#   files       glob 列表，匹配文件路径；省略表示所有文件
+#
+# commit message 的格式（Conventional Commits、长度等）不在这里检查，请交给 commitlint：
+# 格式和长度可以用代码精确判定，交给模型反而容易误判。commit message 仍会作为审查上下文提供给模型。
 #   description 规则的详细说明，支持 Markdown，写得越具体审查越准确
 rules:
   - id: SEC-001
@@ -60,13 +62,3 @@ rules:
     files: ["**/*.ts", "**/*.tsx"]
     description: |
       新增代码中避免使用 any 类型，优先使用具体类型、泛型或 unknown。
-
-  - id: COMMIT-001
-    title: Commit message 遵循 Conventional Commits
-    severity: P3
-    target: commit
-    description: |
-      格式为 `<type>(<scope>): <subject>`，scope 可选。
-      type 取值：feat、fix、docs、style、refactor、perf、test、build、ci、chore、revert。
-      subject 简明描述改动，不超过 72 个字符，结尾不加句号。
-      Merge commit 不检查。
