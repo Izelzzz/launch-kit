@@ -26,10 +26,11 @@ jobs:
           app-id: ${{ vars.REVIEW_APP_ID }}
           private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
 
-      # 从目标分支检出脚本和规则，防止 PR 顺手修改审查规则
+      # 从目标分支检出脚本和规则，防止 PR 顺手修改审查规则。
+      # 用分支名而不是事件里的 base.sha：后者在 PR 重新打开时可能是旧提交，导致用上旧版审查脚本
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.ref }}
           sparse-checkout: .github
           persist-credentials: false
 
