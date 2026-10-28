@@ -3,7 +3,7 @@
 import { generate } from "./generate.js";
 import { loadLlmConfig } from "./llm.js";
 import { findPlatforms } from "./platforms.js";
-import { fetchRepo } from "./repo.js";
+import { fetchRepo, parseRepoUrl } from "./repo.js";
 
 function parseArgs(argv: string[]): { repo: string; platforms: string[]; json: boolean } {
   let repo = "";
@@ -11,7 +11,13 @@ function parseArgs(argv: string[]): { repo: string; platforms: string[]; json: b
   let json = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--platform") platforms = (argv[++i] ?? "").split(",").filter(Boolean);
+    if (arg === "--platform") {
+      const value = argv[++i];
+      if (!value || value.startsWith("--")) {
+        throw new Error("--platform 需要指定平台列表，例如 --platform twitter,xiaohongshu");
+      }
+      platforms = value.split(",").map((p) => p.trim()).filter(Boolean);
+    }
     else if (arg === "--json") json = true;
     else if (!repo) repo = arg;
   }
@@ -24,8 +30,10 @@ async function main(): Promise<void> {
   const platforms = findPlatforms(args.platforms);
   const config = loadLlmConfig();
 
-  console.error(`📖 读取仓库 ${args.repo} …`);
-  const repo = await fetchRepo(args.repo);
+  // 只使用解析出的 owner/repo，地址中可能带有的凭据不会被打印或传出
+  const { owner, name } = parseRepoUrl(args.repo);
+  console.error(`📖 读取仓库 ${owner}/${name} …`);
+  const repo = await fetchRepo(`${owner}/${name}`);
   console.error(`✍️  生成 ${platforms.length} 个平台的文案 …`);
   const copies = await generate(config, repo, platforms);
   if (copies.some((c) => c.error)) process.exitCode = 1;

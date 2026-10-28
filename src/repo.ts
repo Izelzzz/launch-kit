@@ -12,6 +12,11 @@ export interface RepoInfo {
 
 const MAX_README_CHARS = 12000;
 
+// 隐去地址中的凭据（https://token@… 或 user:password@…），避免出现在日志和报错里
+export function redactCredentials(input: string): string {
+  return input.replace(/\/\/[^/@\s]+@/g, "//***@").replace(/^[^/@\s:]+:[^/@\s]+@/, "***@");
+}
+
 // 支持：owner/repo、github.com/owner/repo、https://(www.)github.com/owner/repo（可带 .git、子页面、?query、#hash），
 // 以及 git@github.com:owner/repo.git
 export function parseRepoUrl(input: string): { owner: string; name: string } {
@@ -20,7 +25,7 @@ export function parseRepoUrl(input: string): { owner: string; name: string } {
   const ssh = raw.match(/^git@github\.com:(.+)$/i);
   if (ssh) {
     segments = ssh[1].replace(/\/+$/, "").split("/");
-  } else if (/^(?:https?:\/\/)?(?:www\.)?github\.com\//i.test(raw)) {
+  } else if (/^(?:https?:\/\/)?(?:[^/@\s]+@)?(?:www\.)?github\.com\//i.test(raw)) {
     const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
     segments = url.pathname.split("/").filter(Boolean).slice(0, 2);
   } else {
@@ -31,7 +36,7 @@ export function parseRepoUrl(input: string): { owner: string; name: string } {
   const name = segments[1]?.replace(/\.git$/, "");
   const isValid = (s: string | undefined) => !!s && /^[\w.-]+$/.test(s) && !/^\.+$/.test(s);
   if (segments.length !== 2 || !isValid(owner) || !isValid(name)) {
-    throw new Error(`无法识别的仓库地址：${input}（示例：https://github.com/owner/repo 或 owner/repo）`);
+    throw new Error(`无法识别的仓库地址：${redactCredentials(input)}（示例：https://github.com/owner/repo 或 owner/repo）`);
   }
   return { owner, name: name! };
 }
